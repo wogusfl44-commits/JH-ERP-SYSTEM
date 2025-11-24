@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud EMS (Real-time)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f1f5f9; }
+        .sidebar { width: 250px; background: #0f172a; color: white; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; }
+        .main-content { margin-left: 250px; padding: 2rem; min-height: 100vh; }
+        .nav-item { padding: 1rem 1.5rem; cursor: pointer; display: flex; align-items: center; color: #94a3b8; }
+        .nav-item:hover, .nav-item.active { background: #1e293b; color: white; border-right: 4px solid #3b82f6; }
+        .card { background: white; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .page-section { display: none; }
+        .page-section.active { display: block; }
+        .loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.8); z-index:100; display:flex; justify-content:center; align-items:center; }
+        /* 테이블 스타일 */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th { text-align: left; padding: 1rem; background: #f8fafc; color: #64748b; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
+        .data-table td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+    <div id="loader" class="loading-overlay">
+        <div class="text-center">
+            <i class="fas fa-circle-notch fa-spin text-4xl text-blue-600"></i>
+            <p class="mt-2 font-bold text-gray-600">서버와 동기화 중...</p>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="p-6 border-b border-gray-800">
+            <h1 class="text-xl font-bold"><i class="fas fa-cloud text-blue-500 mr-2"></i>Cloud EMS</h1>
+            <p class="text-xs text-gray-500 mt-1">실시간 데이터 공유 시스템</p>
+        </div>
+        <nav class="mt-4">
+            <div class="nav-item active" onclick="showPage('dashboard')"><i class="fas fa-chart-pie w-6"></i> 대시보드</div>
+            <div class="nav-item" onclick="showPage('inventory')"><i class="fas fa-boxes w-6"></i> 자재 관리</div>
+            <div class="nav-item" onclick="showPage('transaction')"><i class="fas fa-exchange-alt w-6"></i> 입출고</div>
+        </nav>
+        <div class="absolute bottom-0 w-full p-4 text-xs text-green-400 border-t border-gray-800">
+            <i class="fas fa-wifi mr-1"></i> 서버 연결됨 (Online)
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div id="dashboard" class="page-section active">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">실시간 현황판</h2>
+            <div class="grid grid-cols-3 gap-6 mb-6">
+                <div class="card border-l-4 border-blue-500">
+                    <p class="text-gray-500">총 품목</p>
+                    <h3 class="text-2xl font-bold" id="dashTotalCount">0</h3>
+                </div>
+                <div class="card border-l-4 border-green-500">
+                    <p class="text-gray-500">총 재고 가치</p>
+                    <h3 class="text-2xl font-bold" id="dashTotalValue">₩0</h3>
+                </div>
+                <div class="card border-l-4 border-red-500">
+                    <p class="text-gray-500">재고 부족 (10개 미만)</p>
+                    <h3 class="text-2xl font-bold text-red-600" id="dashLowStock">0</h3>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="font-bold mb-4">최근 입출고 이력 (실시간)</h3>
+                <table class="data-table">
+                    <thead><tr><th>시간</th><th>구분</th><th>품목</th><th>수량</th></tr></thead>
+                    <tbody id="dashRecentTx"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="inventory" class="page-section">
+            <div class="flex justify-between mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">자재 마스터</h2>
+                <button onclick="openModal('itemModal')" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700">
+                    + 신규 품목
+                </button>
+            </div>
+            <div class="card overflow-x-auto">
+                <table class="data-table">
+                    <thead><tr><th>코드</th><th>품목명</th><th>규격</th><th>단가</th><th>재고</th><th>관리</th></tr></thead>
+                    <tbody id="inventoryBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="transaction" class="page-section">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6">입출고 처리</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="card h-fit">
+                    <h3 class="font-bold mb-4 border-b pb-2">처리 입력</h3>
+                    <select id="txItemSelect" class="w-full border p-2 mb-3 rounded">
+                        <option value="">품목 선택...</option>
+                    </select>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <button onclick="setTxType('IN')" id="btnIn" class="border p-2 rounded text-center hover:bg-blue-50">입고</button>
+                        <button onclick="setTxType('OUT')" id="btnOut" class="border p-2 rounded text-center hover:bg-red-50">출고</button>
+                    </div>
+                    <input type="number" id="txQty" placeholder="수량" class="w-full border p-2 mb-3 rounded">
+                    <input type="text" id="txNote" placeholder="비고" class="w-full border p-2 mb-4 rounded">
+                    <button onclick="submitTransaction()" class="w-full bg-slate-800 text-white p-2 rounded font-bold">전송</button>
+                </div>
+                <div class="lg:col-span-2 card">
+                    <h3 class="font-bold mb-4">전체 이력</h3>
+                    <div class="overflow-y-auto max-h-[500px]">
+                        <table class="data-table">
+                            <thead><tr><th>일시</th><th>구분</th><th>품목</th><th>수량</th><th>비고</th></tr></thead>
+                            <tbody id="txHistoryBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="itemModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
+        <div class="bg-white p-6 rounded-lg w-96 shadow-xl">
+            <h3 class="font-bold text-lg mb-4">신규 품목 등록</h3>
+            <input id="newCode" class="w-full border p-2 mb-2 rounded" placeholder="코드 (예: M-01)">
+            <input id="newName" class="w-full border p-2 mb-2 rounded" placeholder="품목명">
+            <input id="newSpec" class="w-full border p-2 mb-2 rounded" placeholder="규격">
+            <input id="newPrice" type="number" class="w-full border p-2 mb-4 rounded" placeholder="단가">
+            <div class="flex justify-end gap-2">
+                <button onclick="closeModal('itemModal')" class="px-4 py-2 bg-gray-200 rounded">취소</button>
+                <button onclick="addItemToFirebase()" class="px-4 py-2 bg-blue-600 text-white rounded font-bold">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } 
+        from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // -----------------------------------------------------------
+        // [중요] 1단계에서 복사한 firebaseConfig 내용을 아래에 덮어쓰세요.
+        // -----------------------------------------------------------
+        const firebaseConfig = {
+            apiKey: "AIzaSyCnztzEkrThAGqZTBjxWZ7NXVTS3ipBhCA",
+    authDomain: "jaehyun-2310.firebaseapp.com",
+    projectId: "jaehyun-2310",
+    storageBucket: "jaehyun-2310.firebasestorage.app",
+    messagingSenderId: "376312208756",
+    appId: "1:376312208756:web:38f9aea87d787c7f56a021",
+    measurementId: "G-KBZ9CQN5MZ"
+        };
+        // -----------------------------------------------------------
+
+        // Firebase 초기화
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 전역 변수로 데이터 캐싱
+        let items = [];
+        let txType = 'IN';
+
+        // 1. 실시간 리스너 (DB가 바뀌면 화면도 바뀜)
+        // 자재 마스터 리스너
+        const qItems = query(collection(db, "items"), orderBy("code"));
+        onSnapshot(qItems, (snapshot) => {
+            items = [];
+            const tbody = document.getElementById("inventoryBody");
+            const select = document.getElementById("txItemSelect");
+            tbody.innerHTML = "";
+            select.innerHTML = '<option value="">품목 선택...</option>';
+
+            snapshot.forEach((doc) => {
+                const item = { id: doc.id, ...doc.data() };
+                items.push(item);
+                
+                // 테이블 렌더링
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td class="font-bold text-blue-700">${item.code}</td>
+                    <td>${item.name}</td>
+                    <td class="text-gray-500">${item.spec}</td>
+                    <td>${Number(item.price).toLocaleString()}</td>
+                    <td class="font-bold ${item.stock < 10 ? 'text-red-600' : ''}">${item.stock.toLocaleString()}</td>
+                    <td><button class="text-red-400 hover:text-red-600" data-id="${item.id}" onclick="window.delItem('${item.id}')"><i class="fas fa-trash"></i></button></td>
+                `;
+                tbody.appendChild(tr);
+
+                // 셀렉트 박스 렌더링
+                const option = document.createElement("option");
+                option.value = item.id;
+                option.text = `[${item.code}] ${item.name} (현재고: ${item.stock})`;
+                select.appendChild(option);
+            });
+
+            updateDashboard();
+            document.getElementById("loader").style.display = "none";
+        });
+
+        // 입출고 이력 리스너
+        const qTx = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
+        onSnapshot(qTx, (snapshot) => {
+            const tbody = document.getElementById("txHistoryBody");
+            const dashBody = document.getElementById("dashRecentTx");
+            tbody.innerHTML = "";
+            dashBody.innerHTML = "";
+
+            let count = 0;
+            snapshot.forEach((doc) => {
+                const tx = doc.data();
+                const dateStr = tx.timestamp ? new Date(tx.timestamp.toDate()).toLocaleString() : "방금 전";
+                
+                const rowHtml = `
+                    <td class="text-xs text-gray-500">${dateStr}</td>
+                    <td><span class="px-2 py-1 rounded text-xs ${tx.type === 'IN' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}">${tx.type === 'IN' ? '입고' : '출고'}</span></td>
+                    <td>${tx.itemName}</td>
+                    <td class="font-bold">${tx.qty}</td>
+                `;
+
+                // 전체 이력
+                const tr = document.createElement("tr");
+                tr.innerHTML = rowHtml + `<td class="text-sm text-gray-500">${tx.note}</td>`;
+                tbody.appendChild(tr);
+
+                // 대시보드 (최근 5개)
+                if(count < 5) {
+                    const dTr = document.createElement("tr");
+                    dTr.innerHTML = rowHtml;
+                    dashBody.appendChild(dTr);
+                    count++;
+                }
+            });
+        });
+
+        // 2. 데이터 쓰기 함수들
+        window.addItemToFirebase = async () => {
+            const code = document.getElementById("newCode").value;
+            const name = document.getElementById("newName").value;
+            const spec = document.getElementById("newSpec").value;
+            const price = Number(document.getElementById("newPrice").value);
+
+            if(!code || !name) return alert("코드와 품목명은 필수입니다.");
+
+            try {
+                await addDoc(collection(db, "items"), {
+                    code, name, spec, price, stock: 0
+                });
+                closeModal("itemModal");
+                // 입력창 초기화
+                document.getElementById("newCode").value = "";
+                document.getElementById("newName").value = "";
+            } catch (e) {
+                alert("저장 오류: " + e.message);
+            }
+        };
+
+        window.delItem = async (id) => {
+            if(confirm("정말 삭제하시겠습니까? (이력은 남습니다)")) {
+                await deleteDoc(doc(db, "items", id));
+            }
+        };
+
+        window.submitTransaction = async () => {
+            const itemId = document.getElementById("txItemSelect").value;
+            const qty = Number(document.getElementById("txQty").value);
+            const note = document.getElementById("txNote").value;
+
+            if(!itemId || qty <= 0) return alert("품목과 수량을 확인하세요.");
+
+            const item = items.find(i => i.id === itemId);
+            if(txType === 'OUT' && item.stock < qty) return alert("재고가 부족합니다.");
+
+            try {
+                // 1. 이력 저장
+                await addDoc(collection(db, "transactions"), {
+                    type: txType,
+                    itemId: itemId,
+                    itemCode: item.code,
+                    itemName: item.name,
+                    qty: qty,
+                    note: note,
+                    timestamp: serverTimestamp()
+                });
+
+                // 2. 재고 업데이트
+                const newStock = txType === 'IN' ? item.stock + qty : item.stock - qty;
+                await updateDoc(doc(db, "items", itemId), {
+                    stock: newStock
+                });
+
+                // 초기화
+                document.getElementById("txQty").value = "";
+                document.getElementById("txNote").value = "";
+                alert("처리되었습니다.");
+            } catch (e) {
+                console.error(e);
+                alert("오류 발생");
+            }
+        };
+
+        // 3. UI 헬퍼 함수
+        window.setTxType = (type) => {
+            txType = type;
+            document.getElementById("btnIn").className = type === 'IN' ? 'bg-blue-600 text-white p-2 rounded w-full' : 'border p-2 rounded w-full hover:bg-blue-50';
+            document.getElementById("btnOut").className = type === 'OUT' ? 'bg-red-600 text-white p-2 rounded w-full' : 'border p-2 rounded w-full hover:bg-red-50';
+        };
+        // 초기 버튼 상태 설정
+        window.setTxType('IN');
+
+        function updateDashboard() {
+            document.getElementById("dashTotalCount").innerText = items.length;
+            const totalVal = items.reduce((sum, i) => sum + (i.price * i.stock), 0);
+            document.getElementById("dashTotalValue").innerText = "₩" + totalVal.toLocaleString();
+            document.getElementById("dashLowStock").innerText = items.filter(i => i.stock < 10).length;
+        }
+
+    </script>
+
+    <script>
+        // 일반 UI 제어 스크립트 (모듈 아님)
+        function showPage(id) {
+            document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    </script>
+</body>
+</html>

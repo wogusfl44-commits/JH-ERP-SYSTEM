@@ -1,328 +1,369 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud EMS (Real-time)</title>
+    <title>Cloud ERP System V3.2 (Firebase Online)</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+
+    <!-- Firebase Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+
     <style>
-        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f1f5f9; }
-        .sidebar { width: 250px; background: #0f172a; color: white; height: 100vh; position: fixed; left: 0; top: 0; z-index: 50; }
-        .main-content { margin-left: 250px; padding: 2rem; min-height: 100vh; }
-        .nav-item { padding: 1rem 1.5rem; cursor: pointer; display: flex; align-items: center; color: #94a3b8; }
-        .nav-item:hover, .nav-item.active { background: #1e293b; color: white; border-right: 4px solid #3b82f6; }
-        .card { background: white; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .page-section { display: none; }
-        .page-section.active { display: block; }
-        .loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.8); z-index:100; display:flex; justify-content:center; align-items:center; }
-        /* 테이블 스타일 */
-        .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th { text-align: left; padding: 1rem; background: #f8fafc; color: #64748b; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
-        .data-table td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
+        :root {
+            --font-main: 'Pretendard', sans-serif;
+            --bg-sidebar: #111827;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: #f3f4f6;
+            color: #374151;
+        }
+
+        .card-panel {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(229, 231, 235, 0.5);
+            transition: transform 0.2s;
+        }
+
+        .card-panel:hover {
+            transform: translateY(-2px);
+        }
+
+        .sidebar {
+            width: 260px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            background: var(--bg-sidebar);
+            color: white;
+            z-index: 50;
+            transition: 0.3s;
+        }
+
+        .main-content {
+            margin-left: 260px;
+            padding: 2rem;
+            min-height: 100vh;
+            transition: 0.3s;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.5s ease-out forwards;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
+
 <body>
-
-    <div id="loader" class="loading-overlay">
-        <div class="text-center">
-            <i class="fas fa-circle-notch fa-spin text-4xl text-blue-600"></i>
-            <p class="mt-2 font-bold text-gray-600">서버와 동기화 중...</p>
-        </div>
+    <div id="loading-overlay" class="fixed inset-0 bg-white/90 z-[9999] flex flex-col justify-center items-center">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600 mb-4"></div>
+        <p class="text-gray-600 font-bold animate-pulse">Connecting to Cloud...</p>
     </div>
 
-    <div class="sidebar">
-        <div class="p-6 border-b border-gray-800">
-            <h1 class="text-xl font-bold"><i class="fas fa-cloud text-blue-500 mr-2"></i>Cloud EMS</h1>
-            <p class="text-xs text-gray-500 mt-1">실시간 데이터 공유 시스템</p>
-        </div>
-        <nav class="mt-4">
-            <div class="nav-item active" onclick="showPage('dashboard')"><i class="fas fa-chart-pie w-6"></i> 대시보드</div>
-            <div class="nav-item" onclick="showPage('inventory')"><i class="fas fa-boxes w-6"></i> 자재 관리</div>
-            <div class="nav-item" onclick="showPage('transaction')"><i class="fas fa-exchange-alt w-6"></i> 입출고</div>
-        </nav>
-        <div class="absolute bottom-0 w-full p-4 text-xs text-green-400 border-t border-gray-800">
-            <i class="fas fa-wifi mr-1"></i> 서버 연결됨 (Online)
-        </div>
-    </div>
-
-    <div class="main-content">
-        <div id="dashboard" class="page-section active">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">실시간 현황판</h2>
-            <div class="grid grid-cols-3 gap-6 mb-6">
-                <div class="card border-l-4 border-blue-500">
-                    <p class="text-gray-500">총 품목</p>
-                    <h3 class="text-2xl font-bold" id="dashTotalCount">0</h3>
-                </div>
-                <div class="card border-l-4 border-green-500">
-                    <p class="text-gray-500">총 재고 가치</p>
-                    <h3 class="text-2xl font-bold" id="dashTotalValue">₩0</h3>
-                </div>
-                <div class="card border-l-4 border-red-500">
-                    <p class="text-gray-500">재고 부족 (10개 미만)</p>
-                    <h3 class="text-2xl font-bold text-red-600" id="dashLowStock">0</h3>
-                </div>
-            </div>
-            <div class="card">
-                <h3 class="font-bold mb-4">최근 입출고 이력 (실시간)</h3>
-                <table class="data-table">
-                    <thead><tr><th>시간</th><th>구분</th><th>품목</th><th>수량</th></tr></thead>
-                    <tbody id="dashRecentTx"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div id="inventory" class="page-section">
-            <div class="flex justify-between mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">자재 마스터</h2>
-                <button onclick="openModal('itemModal')" class="bg-blue-600 text-white px-4 py-2 rounded font-bold hover:bg-blue-700">
-                    + 신규 품목
-                </button>
-            </div>
-            <div class="card overflow-x-auto">
-                <table class="data-table">
-                    <thead><tr><th>코드</th><th>품목명</th><th>규격</th><th>단가</th><th>재고</th><th>관리</th></tr></thead>
-                    <tbody id="inventoryBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <div id="transaction" class="page-section">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">입출고 처리</h2>
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="card h-fit">
-                    <h3 class="font-bold mb-4 border-b pb-2">처리 입력</h3>
-                    <select id="txItemSelect" class="w-full border p-2 mb-3 rounded">
-                        <option value="">품목 선택...</option>
-                    </select>
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button onclick="setTxType('IN')" id="btnIn" class="border p-2 rounded text-center hover:bg-blue-50">입고</button>
-                        <button onclick="setTxType('OUT')" id="btnOut" class="border p-2 rounded text-center hover:bg-red-50">출고</button>
-                    </div>
-                    <input type="number" id="txQty" placeholder="수량" class="w-full border p-2 mb-3 rounded">
-                    <input type="text" id="txNote" placeholder="비고" class="w-full border p-2 mb-4 rounded">
-                    <button onclick="submitTransaction()" class="w-full bg-slate-800 text-white p-2 rounded font-bold">전송</button>
-                </div>
-                <div class="lg:col-span-2 card">
-                    <h3 class="font-bold mb-4">전체 이력</h3>
-                    <div class="overflow-y-auto max-h-[500px]">
-                        <table class="data-table">
-                            <thead><tr><th>일시</th><th>구분</th><th>품목</th><th>수량</th><th>비고</th></tr></thead>
-                            <tbody id="txHistoryBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="itemModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-[60]">
-        <div class="bg-white p-6 rounded-lg w-96 shadow-xl">
-            <h3 class="font-bold text-lg mb-4">신규 품목 등록</h3>
-            <input id="newCode" class="w-full border p-2 mb-2 rounded" placeholder="코드 (예: M-01)">
-            <input id="newName" class="w-full border p-2 mb-2 rounded" placeholder="품목명">
-            <input id="newSpec" class="w-full border p-2 mb-2 rounded" placeholder="규격">
-            <input id="newPrice" type="number" class="w-full border p-2 mb-4 rounded" placeholder="단가">
-            <div class="flex justify-end gap-2">
-                <button onclick="closeModal('itemModal')" class="px-4 py-2 bg-gray-200 rounded">취소</button>
-                <button onclick="addItemToFirebase()" class="px-4 py-2 bg-blue-600 text-white rounded font-bold">저장</button>
-            </div>
-        </div>
-    </div>
-
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, serverTimestamp } 
-        from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-
-        // -----------------------------------------------------------
-        // [중요] 1단계에서 복사한 firebaseConfig 내용을 아래에 덮어쓰세요.
-        // -----------------------------------------------------------
-        const firebaseConfig = {
-            apiKey: "AIzaSyCnztzEkrThAGqZTBjxWZ7NXVTS3ipBhCA",
-    authDomain: "jaehyun-2310.firebaseapp.com",
-    projectId: "jaehyun-2310",
-    storageBucket: "jaehyun-2310.firebasestorage.app",
-    messagingSenderId: "376312208756",
-    appId: "1:376312208756:web:38f9aea87d787c7f56a021",
-    measurementId: "G-KBZ9CQN5MZ"
-        };
-        // -----------------------------------------------------------
-
-        // Firebase 초기화
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        // 전역 변수로 데이터 캐싱
-        let items = [];
-        let txType = 'IN';
-
-        // 1. 실시간 리스너 (DB가 바뀌면 화면도 바뀜)
-        // 자재 마스터 리스너
-        const qItems = query(collection(db, "items"), orderBy("code"));
-        onSnapshot(qItems, (snapshot) => {
-            items = [];
-            const tbody = document.getElementById("inventoryBody");
-            const select = document.getElementById("txItemSelect");
-            tbody.innerHTML = "";
-            select.innerHTML = '<option value="">품목 선택...</option>';
-
-            snapshot.forEach((doc) => {
-                const item = { id: doc.id, ...doc.data() };
-                items.push(item);
-                
-                // 테이블 렌더링
-                const tr = document.createElement("tr");
-                tr.innerHTML = `
-                    <td class="font-bold text-blue-700">${item.code}</td>
-                    <td>${item.name}</td>
-                    <td class="text-gray-500">${item.spec}</td>
-                    <td>${Number(item.price).toLocaleString()}</td>
-                    <td class="font-bold ${item.stock < 10 ? 'text-red-600' : ''}">${item.stock.toLocaleString()}</td>
-                    <td><button class="text-red-400 hover:text-red-600" data-id="${item.id}" onclick="window.delItem('${item.id}')"><i class="fas fa-trash"></i></button></td>
-                `;
-                tbody.appendChild(tr);
-
-                // 셀렉트 박스 렌더링
-                const option = document.createElement("option");
-                option.value = item.id;
-                option.text = `[${item.code}] ${item.name} (현재고: ${item.stock})`;
-                select.appendChild(option);
-            });
-
-            updateDashboard();
-            document.getElementById("loader").style.display = "none";
-        });
-
-        // 입출고 이력 리스너
-        const qTx = query(collection(db, "transactions"), orderBy("timestamp", "desc"));
-        onSnapshot(qTx, (snapshot) => {
-            const tbody = document.getElementById("txHistoryBody");
-            const dashBody = document.getElementById("dashRecentTx");
-            tbody.innerHTML = "";
-            dashBody.innerHTML = "";
-
-            let count = 0;
-            snapshot.forEach((doc) => {
-                const tx = doc.data();
-                const dateStr = tx.timestamp ? new Date(tx.timestamp.toDate()).toLocaleString() : "방금 전";
-                
-                const rowHtml = `
-                    <td class="text-xs text-gray-500">${dateStr}</td>
-                    <td><span class="px-2 py-1 rounded text-xs ${tx.type === 'IN' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}">${tx.type === 'IN' ? '입고' : '출고'}</span></td>
-                    <td>${tx.itemName}</td>
-                    <td class="font-bold">${tx.qty}</td>
-                `;
-
-                // 전체 이력
-                const tr = document.createElement("tr");
-                tr.innerHTML = rowHtml + `<td class="text-sm text-gray-500">${tx.note}</td>`;
-                tbody.appendChild(tr);
-
-                // 대시보드 (최근 5개)
-                if(count < 5) {
-                    const dTr = document.createElement("tr");
-                    dTr.innerHTML = rowHtml;
-                    dashBody.appendChild(dTr);
-                    count++;
-                }
-            });
-        });
-
-        // 2. 데이터 쓰기 함수들
-        window.addItemToFirebase = async () => {
-            const code = document.getElementById("newCode").value;
-            const name = document.getElementById("newName").value;
-            const spec = document.getElementById("newSpec").value;
-            const price = Number(document.getElementById("newPrice").value);
-
-            if(!code || !name) return alert("코드와 품목명은 필수입니다.");
-
-            try {
-                await addDoc(collection(db, "items"), {
-                    code, name, spec, price, stock: 0
-                });
-                closeModal("itemModal");
-                // 입력창 초기화
-                document.getElementById("newCode").value = "";
-                document.getElementById("newName").value = "";
-            } catch (e) {
-                alert("저장 오류: " + e.message);
-            }
-        };
-
-        window.delItem = async (id) => {
-            if(confirm("정말 삭제하시겠습니까? (이력은 남습니다)")) {
-                await deleteDoc(doc(db, "items", id));
-            }
-        };
-
-        window.submitTransaction = async () => {
-            const itemId = document.getElementById("txItemSelect").value;
-            const qty = Number(document.getElementById("txQty").value);
-            const note = document.getElementById("txNote").value;
-
-            if(!itemId || qty <= 0) return alert("품목과 수량을 확인하세요.");
-
-            const item = items.find(i => i.id === itemId);
-            if(txType === 'OUT' && item.stock < qty) return alert("재고가 부족합니다.");
-
-            try {
-                // 1. 이력 저장
-                await addDoc(collection(db, "transactions"), {
-                    type: txType,
-                    itemId: itemId,
-                    itemCode: item.code,
-                    itemName: item.name,
-                    qty: qty,
-                    note: note,
-                    timestamp: serverTimestamp()
-                });
-
-                // 2. 재고 업데이트
-                const newStock = txType === 'IN' ? item.stock + qty : item.stock - qty;
-                await updateDoc(doc(db, "items", itemId), {
-                    stock: newStock
-                });
-
-                // 초기화
-                document.getElementById("txQty").value = "";
-                document.getElementById("txNote").value = "";
-                alert("처리되었습니다.");
-            } catch (e) {
-                console.error(e);
-                alert("오류 발생");
-            }
-        };
-
-        // 3. UI 헬퍼 함수
-        window.setTxType = (type) => {
-            txType = type;
-            document.getElementById("btnIn").className = type === 'IN' ? 'bg-blue-600 text-white p-2 rounded w-full' : 'border p-2 rounded w-full hover:bg-blue-50';
-            document.getElementById("btnOut").className = type === 'OUT' ? 'bg-red-600 text-white p-2 rounded w-full' : 'border p-2 rounded w-full hover:bg-red-50';
-        };
-        // 초기 버튼 상태 설정
-        window.setTxType('IN');
-
-        function updateDashboard() {
-            document.getElementById("dashTotalCount").innerText = items.length;
-            const totalVal = items.reduce((sum, i) => sum + (i.price * i.stock), 0);
-            document.getElementById("dashTotalValue").innerText = "₩" + totalVal.toLocaleString();
-            document.getElementById("dashLowStock").innerText = items.filter(i => i.stock < 10).length;
-        }
-
-    </script>
+    <div id="app"></div>
 
     <script>
-        // 일반 UI 제어 스크립트 (모듈 아님)
-        function showPage(id) {
-            document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+        // ==========================================
+        // 1. Firebase Configuration
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyCnztzEkrThAGqZTBjxWZ7NXVTS3ipBhCA",
+            authDomain: "jaehyun-2310.firebaseapp.com",
+            projectId: "jaehyun-2310",
+            storageBucket: "jaehyun-2310.firebasestorage.app",
+            messagingSenderId: "376312208756",
+            appId: "1:376312208756:web:38f9aea87d787c7f56a021",
+            measurementId: "G-KBZ9CQN5MZ"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // ==========================================
+        // 2. State & Components
+        // ==========================================
+        let currentUser = null;
+        let currentTab = 'dashboard';
+
+        function renderSidebar(active) {
+            const menus = [
+                { id: 'dashboard', icon: 'fa-chart-pie', label: '대시보드' },
+                { id: 'materials', icon: 'fa-box-open', label: '자재 관리' },
+                { id: 'equipment', icon: 'fa-tools', label: '설비 관리' },
+                { id: 'inout', icon: 'fa-exchange-alt', label: '입출고 처리' },
+                { id: 'suppliers', icon: 'fa-handshake', label: '거래처 관리' },
+                { id: 'guide', icon: 'fa-book-reader', label: '사용 가이드' }
+            ];
+            return `
+                <aside class="sidebar flex flex-col">
+                    <div class="p-6 border-b border-gray-800">
+                        <h1 class="text-lg font-bold text-white"><i class="fas fa-cloud mr-2 text-blue-500"></i>Smart ERP</h1>
+                        <p class="text-[10px] text-gray-500 mt-1">Online Mode</p>
+                        <div class="mt-6 flex items-center p-3 bg-gray-800 rounded-lg">
+                            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-xs font-bold mr-3 text-white">U</div>
+                            <div><p class="text-sm font-medium text-white">${currentUser?.name}</p><div class="text-[10px] text-green-400">Online</div></div>
+                        </div>
+                    </div>
+                    <nav class="flex-1 py-4 space-y-1">
+                        ${menus.map(m => `<div onclick="switchTab('${m.id}')" class="px-6 py-3 cursor-pointer flex items-center text-gray-400 hover:text-white hover:bg-white/5 ${active === m.id ? 'border-l-4 border-blue-500 bg-gradient-to-r from-blue-900/20 to-transparent text-white' : ''}"><i class="fas ${m.icon} w-6"></i> ${m.label}</div>`).join('')}
+                    </nav>
+                    <div class="p-4 border-t border-gray-800"><button onclick="auth.signOut()" class="w-full text-gray-400 hover:text-white py-2 text-sm"><i class="fas fa-sign-out-alt mr-2"></i>로그아웃</button></div>
+                </aside>`;
         }
-        function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
-        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+        function renderHeader(title) {
+            return `
+                <header class="bg-gradient-to-r from-blue-700 to-blue-600 text-white p-8 rounded-2xl mb-8 shadow-lg flex justify-between items-end">
+                    <div><p class="text-blue-200 text-sm font-medium mb-1">${new Date().toLocaleDateString()}</p><h2 class="text-3xl font-bold">${title}</h2></div>
+                    <div class="hidden md:block"><span class="bg-white/10 px-4 py-2 rounded-lg text-sm backdrop-blur-sm">Cloud ERP System</span></div>
+                </header>`;
+        }
+
+        // ==========================================
+        // 3. Pages
+        // ==========================================
+        async function renderDashboard(c) {
+            c.innerHTML = `<div class="grid grid-cols-4 gap-6 animate-pulse">${'<div class="h-32 bg-gray-200 rounded-xl"></div>'.repeat(4)}</div>`;
+            try {
+                const [mSnap, sSnap] = await Promise.all([db.collection('materials').get(), db.collection('suppliers').get()]);
+                const mats = mSnap.docs.map(d => d.data());
+                const low = mats.filter(m => m.currentStock <= m.safetyStock);
+
+                c.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 animate-fade-in-up">
+                        <div class="card-panel p-6 border-l-4 border-blue-500 cursor-pointer" onclick="switchTab('materials')"><p class="text-xs font-bold text-gray-400">총 자재</p><h3 class="text-3xl font-bold mt-2">${mats.filter(m => m.type === 'material').length}</h3></div>
+                        <div class="card-panel p-6 border-l-4 border-emerald-500 cursor-pointer" onclick="switchTab('equipment')"><p class="text-xs font-bold text-gray-400">총 설비</p><h3 class="text-3xl font-bold mt-2">${mats.filter(m => m.type === 'equipment').length}</h3></div>
+                        <div class="card-panel p-6 border-l-4 border-violet-500"><p class="text-xs font-bold text-gray-400">총 자산</p><h3 class="text-2xl font-bold mt-2">₩ ${mats.reduce((a, b) => a + (b.price * b.currentStock), 0).toLocaleString()}</h3></div>
+                        <div class="card-panel p-6 border-l-4 border-red-500 cursor-pointer" onclick="document.getElementById('low-stock').scrollIntoView()"><p class="text-xs font-bold text-red-400">부족 알림</p><h3 class="text-3xl font-bold text-red-600 ${low.length ? 'animate-pulse' : ''}">${low.length}</h3></div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in-up">
+                        <div class="card-panel p-6"><h3 class="font-bold text-lg mb-6">카테고리 현황</h3><div class="h-80"><canvas id="chart"></canvas></div></div>
+                        <div class="card-panel p-6" id="low-stock"><h3 class="font-bold text-lg mb-6 text-red-600">🚨 재고 부족 목록</h3>
+                            <div class="overflow-y-auto h-80 border rounded-lg"><table class="w-full text-sm text-left"><thead class="bg-red-50 text-red-700 sticky top-0"><tr><th class="p-4">품목</th><th class="p-4 text-center">현재고</th><th class="p-4 text-right">부족분</th></tr></thead><tbody>${low.map(m => `<tr class="border-b"><td class="p-4">${m.name}</td><td class="p-4 text-center font-bold text-red-600">${m.currentStock}</td><td class="p-4 text-right">-${m.safetyStock - m.currentStock}</td></tr>`).join('')}</tbody></table></div>
+                        </div>
+                    </div>`;
+
+                setTimeout(() => {
+                    const ctx = document.getElementById('chart');
+                    if (ctx) {
+                        const cats = {}; mats.forEach(m => { const c = m.category || '기타'; cats[c] = (cats[c] || 0) + 1; });
+                        new Chart(ctx, { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: '품목 수', data: Object.values(cats), backgroundColor: '#3b82f6' }] }, options: { maintainAspectRatio: false } });
+                    }
+                }, 0);
+            } catch (e) { c.innerHTML = `<div class="text-red-500 p-4">데이터 로드 실패: ${e.message}</div>`; }
+        }
+
+        async function renderList(c, type) {
+            const isMaster = currentUser.role === 'master';
+            c.innerHTML = `
+                <div class="card-panel p-6 animate-fade-in-up">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="font-bold text-xl border-l-4 border-blue-600 pl-3">${type === 'material' ? '자재' : '설비'} 목록</h3>
+                        <div class="flex gap-2 ${isMaster ? '' : 'hidden'}">
+                            <button onclick="document.getElementById('excel').click()" class="btn bg-green-500 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-file-excel mr-2"></i>엑셀 등록</button>
+                            <input type="file" id="excel" class="hidden" accept=".csv" onchange="handleExcel(this, '${type}')">
+                            <button onclick="addItem('${type}')" class="btn bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"><i class="fas fa-plus mr-2"></i>등록</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto rounded-lg border"><table class="w-full text-sm text-left"><thead class="bg-gray-50 font-bold text-gray-700"><tr><th class="p-4">코드</th><th class="p-4">품목명</th><th class="p-4">규격</th><th class="p-4">공급사</th><th class="p-4 text-right">단가</th><th class="p-4 text-center">재고</th><th class="p-4 text-center">관리</th></tr></thead>
+                    <tbody id="mat-body"><tr><td colspan="7" class="p-8 text-center">로딩중...</td></tr></tbody></table></div>
+                </div>`;
+
+            const snap = await db.collection('materials').where('type', '==', type).orderBy('timestamp', 'desc').get();
+            document.getElementById('mat-body').innerHTML = snap.empty ? `<tr><td colspan="7" class="p-8 text-center text-gray-400">데이터 없음</td></tr>` :
+                snap.docs.map(d => {
+                    const i = { id: d.id, ...d.data() };
+                    return `<tr class="hover:bg-gray-50"><td class="p-4 text-gray-500">${i.code}</td><td class="p-4 font-bold">${i.name}</td><td class="p-4 text-xs">${i.spec || '-'}</td><td class="p-4">${i.company || '-'}</td><td class="p-4 text-right">${i.price.toLocaleString()}</td><td class="p-4 text-center font-bold ${i.currentStock <= i.safetyStock ? 'text-red-600' : 'text-blue-600'}">${i.currentStock}</td><td class="p-4 text-center">${isMaster ? `<button onclick="delItem('materials','${i.id}')"><i class="fas fa-trash text-gray-400 hover:text-red-500"></i></button>` : '-'}</td></tr>`;
+                }).join('');
+        }
+
+        async function renderSuppliers(c) {
+            c.innerHTML = `
+                <div class="card-panel p-6 animate-fade-in-up">
+                    <div class="flex justify-between mb-4"><h3 class="font-bold text-xl border-l-4 border-purple-600 pl-3">거래처 목록</h3>${currentUser.role === 'master' ? `<button onclick="addSupplier()" class="btn bg-purple-600 text-white px-4 py-2 rounded-lg text-sm">등록</button>` : ''}</div>
+                    <div class="overflow-x-auto rounded-lg border"><table class="w-full text-sm text-left"><thead class="bg-gray-50 font-bold"><tr><th class="p-4">업체명</th><th class="p-4">연락처</th><th class="p-4">카테고리</th><th class="p-4 text-center">관리</th></tr></thead>
+                    <tbody id="sup-body"><tr><td colspan="4" class="p-8 text-center">로딩중...</td></tr></tbody></table></div>
+                </div>`;
+            const snap = await db.collection('suppliers').orderBy('timestamp', 'desc').get();
+            document.getElementById('sup-body').innerHTML = snap.docs.map(d => {
+                const s = { id: d.id, ...d.data() };
+                return `<tr class="hover:bg-gray-50"><td class="p-4 font-bold">${s.name}</td><td class="p-4">${s.contact || '-'}</td><td class="p-4"><span class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs">${s.category}</span></td><td class="p-4 text-center">${currentUser.role === 'master' ? `<button onclick="delItem('suppliers','${s.id}')"><i class="fas fa-trash text-gray-400 hover:text-red-500"></i></button>` : '-'}</td></tr>`;
+            }).join('');
+        }
+
+        async function renderIO(c) {
+            c.innerHTML = `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
+                    <div class="card-panel p-6 h-fit"><h3 class="font-bold text-lg mb-4 border-b pb-2">입출고 등록</h3>
+                        <div class="space-y-4">
+                            <select id="io-item" class="w-full border rounded-lg p-3 text-sm"><option>로딩중...</option></select>
+                            <div class="grid grid-cols-2 gap-2"><button onclick="ioType='IN'; hlBtn(this)" class="btn border border-blue-200 text-blue-600 py-2 rounded-lg hover:bg-blue-50">입고</button><button onclick="ioType='OUT'; hlBtn(this)" class="btn border border-red-200 text-red-600 py-2 rounded-lg hover:bg-red-50">출고</button></div>
+                            <input type="number" id="io-qty" placeholder="수량" class="w-full border rounded-lg p-3 text-sm">
+                            <button onclick="submitIO()" class="w-full bg-gray-800 text-white font-bold py-3 rounded-lg">처리 완료</button>
+                        </div>
+                    </div>
+                    <div class="card-panel p-6 lg:col-span-2"><h3 class="font-bold mb-4">처리 이력</h3>
+                        <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead class="bg-gray-50 font-bold"><tr><th class="p-3">구분</th><th class="p-3">품목</th><th class="p-3">수량</th><th class="p-3">담당</th><th class="p-3">시간</th></tr></thead>
+                        <tbody id="tx-body"></tbody></table></div>
+                    </div>
+                </div>`;
+
+            const snap = await db.collection('materials').get();
+            document.getElementById('io-item').innerHTML = snap.docs.map(d => { const m = d.data(); return `<option value="${d.id}">[${m.code}] ${m.name} (${m.currentStock})</option>`; }).join('');
+
+            const txSnap = await db.collection('transactions').orderBy('timestamp', 'desc').limit(20).get();
+            document.getElementById('tx-body').innerHTML = txSnap.docs.map(d => {
+                const t = d.data();
+                return `<tr class="border-b"><td class="p-3 font-bold ${t.type === 'IN' ? 'text-blue-600' : 'text-red-600'}">${t.type === 'IN' ? '입고' : '출고'}</td><td class="p-3">${t.itemName}</td><td class="p-3">${t.qty}</td><td class="p-3">${t.user}</td><td class="p-3 text-xs text-gray-400">${t.date}</td></tr>`;
+            }).join('');
+        }
+
+        function renderGuide(c) {
+            c.innerHTML = `<div class="max-w-4xl mx-auto animate-fade-in-up"><div class="bg-gray-800 text-white p-8 rounded-2xl text-center mb-6"><h2 class="text-3xl font-bold">사용 가이드</h2><p>Online Mode (Firebase)</p></div><div class="card-panel p-6"><h3 class="font-bold text-lg mb-4">📌 엑셀 일괄 등록</h3><p>CSV 파일 형식: <code>코드, 품목명, 규격, 공급사, 단가, 안전재고, 현재재고, 카테고리</code></p></div></div>`;
+        }
+
+        // ==========================================
+        // 4. Logic
+        // ==========================================
+        let ioType = '';
+        function hlBtn(el) { document.querySelectorAll('.btn').forEach(b => b.classList.remove('ring-2')); el.classList.add('ring-2'); }
+        function switchTab(t) { currentTab = t; renderApp(); }
+
+        function addItem(type) {
+            const code = prompt("코드:"), name = prompt("품목명:");
+            if (code && name) db.collection('materials').add({ type, code, name, currentStock: 0, safetyStock: 10, price: 0, category: '기타', timestamp: firebase.firestore.FieldValue.serverTimestamp() }).then(() => renderApp());
+        }
+        function delItem(col, id) { if (confirm("삭제?")) db.collection(col).doc(id).delete().then(() => renderApp()); }
+
+        async function submitIO() {
+            const id = document.getElementById('io-item').value, qty = parseInt(document.getElementById('io-qty').value);
+            if (!ioType || !qty) return alert("정보 부족");
+            const ref = db.collection('materials').doc(id);
+            const doc = await ref.get();
+            const item = doc.data();
+            if (ioType === 'OUT' && item.currentStock < qty) return alert("재고 부족");
+
+            await ref.update({ currentStock: ioType === 'IN' ? item.currentStock + qty : item.currentStock - qty });
+            await db.collection('transactions').add({ type: ioType, itemName: item.name, qty, user: currentUser.name, date: new Date().toLocaleString(), timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+            alert("완료"); renderApp();
+        }
+
+        function handleExcel(input, type) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const rows = e.target.result.split('\n').slice(1);
+                const batch = db.batch();
+                rows.forEach(r => {
+                    const c = r.split(',');
+                    if (c.length >= 7) {
+                        const ref = db.collection('materials').doc();
+                        batch.set(ref, { type, code: c[0], name: c[1], spec: c[2], company: c[3], price: parseInt(c[4]) || 0, safetyStock: parseInt(c[5]) || 0, currentStock: parseInt(c[6]) || 0, category: c[7] || '기타', timestamp: firebase.firestore.Timestamp.now() });
+                    }
+                });
+                await batch.commit(); alert("완료"); renderApp();
+            };
+            reader.readAsText(file, 'EUC-KR');
+        }
+
+        // ==========================================
+        // 5. Auth & Init
+        // ==========================================
+        function renderLogin() {
+            document.getElementById('app').innerHTML = `
+                <div class="min-h-screen flex items-center justify-center bg-gray-900 p-4">
+                    <div class="bg-white p-10 rounded-2xl shadow-2xl w-full max-w-md text-center">
+                        <h1 class="text-2xl font-bold text-gray-900 mb-6">Cloud ERP V3.2</h1>
+                        <form id="loginForm" onsubmit="event.preventDefault(); doLogin();" class="space-y-4">
+                            <input type="email" id="email" placeholder="이메일" class="w-full p-3 border rounded-lg" required>
+                            <input type="password" id="password" placeholder="비밀번호 (6자리 이상)" class="w-full p-3 border rounded-lg" required>
+                            <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700">로그인</button>
+                            <button type="button" onclick="doSignup()" class="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-lg hover:bg-gray-200">회원가입</button>
+                        </form>
+                    </div>
+                </div>`;
+        }
+
+        function doLogin() {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            auth.signInWithEmailAndPassword(e, p).catch(err => alert("로그인 실패: " + err.message));
+        }
+
+        function doSignup() {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            if (p.length < 6) return alert("비밀번호는 6자리 이상이어야 합니다.");
+            auth.createUserWithEmailAndPassword(e, p)
+                .then(() => alert("가입 성공! 로그인되었습니다."))
+                .catch(err => alert("가입 실패: " + err.message));
+        }
+
+        function renderApp() {
+            const titles = { 'dashboard': '경영 대시보드', 'materials': '자재 관리', 'equipment': '설비 관리', 'inout': '입출고 처리', 'suppliers': '거래처 관리', 'guide': '사용 가이드' };
+            document.getElementById('app').innerHTML = `
+                <div class="flex min-h-screen bg-gray-50">
+                    ${renderSidebar(currentTab)}
+                    <main class="main-content flex-1">
+                        ${renderHeader(titles[currentTab])}
+                        <div id="content-area"></div>
+                    </main>
+                </div>`;
+            const c = document.getElementById('content-area');
+            if (currentTab === 'dashboard') renderDashboard(c);
+            else if (currentTab === 'materials') renderList(c, 'material');
+            else if (currentTab === 'equipment') renderList(c, 'equipment');
+            else if (currentTab === 'suppliers') renderSuppliers(c);
+            else if (currentTab === 'inout') renderIO(c);
+            else if (currentTab === 'guide') renderGuide(c);
+        }
+
+        auth.onAuthStateChanged(user => {
+            document.getElementById('loading-overlay').style.display = 'none';
+            if (user) {
+                const role = user.email.includes('admin') ? 'master' : 'staff';
+                currentUser = { email: user.email, uid: user.uid, role, name: role === 'master' ? '관리자' : '직원' };
+                renderApp();
+            } else {
+                currentUser = null;
+                renderLogin();
+            }
+        });
     </script>
 </body>
+
 </html>
